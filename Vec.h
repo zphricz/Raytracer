@@ -83,7 +83,7 @@ public:
     }
 
     T magnitude_square() const {
-        T sum = T();
+        T sum = T(0);
         for (size_t i = 0; i < N; ++i) {
             sum += v[i] * v[i];
         }
@@ -92,7 +92,7 @@ public:
 
     void zero() {
         for (size_t i = 0; i < N; ++i) {
-            v[i] = T();
+            v[i] = T(0);
         }
     }
 
@@ -177,7 +177,7 @@ public:
     }
 
     T dot(const Vec<T, N, C>& other) const {
-        T sum = T();
+        T sum = T(0);
         for (size_t i = 0; i < N; ++i) {
             sum += v[i] * other[i];
         }
@@ -319,8 +319,8 @@ public:
     }
 
     void zero() {
-        x = T();
-        y = T();
+        x = T(0);
+        y = T(0);
     }
 
     void normalize() {
@@ -456,13 +456,35 @@ public:
         static_assert(C == true, "Mismatched vector/matrix dimensions");
     }
 
+    static const Vec<T, 3> x_axis() {
+        return Vec<T, 3>(T(1), T(0), T(0));
+    }
+
+    static const Vec<T, 3> y_axis()  {
+        return Vec<T, 3>(T(0), T(1), T(0));
+    }
+
+    static const Vec<T, 3> z_axis() {
+        return Vec<T, 3>(T(0), T(0), T(1));
+    }
+
     /*
      * Pitch needs to be bounded by [-PI/2, PI/2]
      */
-    Vec(T _yaw, T _pitch) :
+    /*Vec(T _yaw, T _pitch) :
         x(cos(_pitch) * sin(_yaw)),
         y(sin(_pitch)),
         z(cos(_pitch) * cos(_yaw)) {
+    }*/
+    Vec(T _pitch, T _yaw) :
+        x(0),
+        y(0),
+        z(1) {
+        rotate_x(_pitch);
+        rotate_y(_yaw);
+        /*x(cos(_pitch) * sin(_yaw)),
+        y(sin(_pitch)),
+        z(cos(_pitch) * cos(_yaw)) {*/
     }
 
     Vec(T x, T y, T z) :
@@ -489,9 +511,9 @@ public:
     }
 
     void zero() {
-        x = T();
-        y = T();
-        z = T();
+        x = T(0);
+        y = T(0);
+        z = T(0);
     }
 
     void normalize() {
@@ -621,9 +643,9 @@ public:
         z = z * cos(delta) - x * sin(delta);
         x = temp;
 #else
-        Matrix<T, 3, 3> lhs{{cos(delta),  T(), sin(delta)},
-                            {T(),         T(1),       T()},
-                            {-sin(delta), T(), cos(delta)}};
+        Matrix<T, 3, 3> lhs{{cos(delta),  T(0), sin(delta)},
+                            {T(0),         T(1),       T(0)},
+                            {-sin(delta), T(0), cos(delta)}};
 
         // Figure out why the above doesn't work, but this does
         /* Matrix<T, 3, 3> lhs = {{T(cos(delta)),  T(), T(sin(delta))},
@@ -645,6 +667,23 @@ public:
         x *= factor;
         z *= factor;
         y = temp;
+    }
+
+    void rotate(const Vec<T, 3>& axis, T theta) {
+        *this = *this * cos(theta) + (axis.cross(*this)) * sin(theta) +
+            axis * (axis.dot(*this)) * (1 - cos(theta));
+    }
+
+    void rotate_x(T theta) {
+        rotate(x_axis(), theta);
+    }
+
+    void rotate_y(T theta) {
+        rotate(y_axis(), theta);
+    }
+    
+    void rotate_z(T theta) {
+        rotate(z_axis(), theta);
     }
 
     void set_yaw(T _yaw) {

@@ -50,6 +50,7 @@ int main(int argc, char* argv[])
         full_screen = false;
     }
 
+    //full_screen = false;
     Screen scr(screen_width, screen_height, "Raytracer", full_screen, true,
                false);
     Game g(&scr);

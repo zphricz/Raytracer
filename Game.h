@@ -15,12 +15,12 @@ struct Sphere {
 class Game {
     private:
         Screen* scr;
-        float hfov;
         const float plane_width;
         const float plane_height;
         float plane_distance;
-        Linear::Vec3f orientation;
         Linear::Vec3f position;
+        float pitch;
+        float yaw;
         std::vector<Sphere> spheres;
         const int num_threads;
         bool running;

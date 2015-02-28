@@ -6,11 +6,43 @@
 #include <random>
 #include "Game.h"
 
+#define THREADED
+
 using namespace std;
 using namespace Linear;
 
 constexpr float PI = M_PI;
-constexpr float fov = 75.0;
+constexpr float TWO_PI = M_PI * 2.0;
+
+static constexpr float rad(float theta) {
+    return theta * PI / 180.0;
+}
+
+static constexpr float deg(float theta) {
+    return theta * 180.0 / PI;
+}
+
+static float clip_yaw(float yaw) {
+    if (yaw < 0.0) {
+        return yaw + TWO_PI;
+    }
+    if (yaw >= TWO_PI) {
+        return yaw - TWO_PI;
+    }
+    return yaw;
+}
+
+static float clip_pitch(float pitch) {
+    if (pitch > PI / 2) {
+        return PI / 2;
+    }
+    if (pitch < -PI / 2) {
+        return -PI / 2;
+    }
+    return pitch;
+}
+
+constexpr float fov = rad(75.0);
 constexpr float move_speed = 3.0;
 constexpr float rotate_speed = PI / 2;
 constexpr int samples_per_pixel = 1;
@@ -48,51 +80,52 @@ void Game::handle_input() {
         }
     }
     if (key_state[SDL_SCANCODE_UP]) {
-        orientation.rotate_pitch(rotate_speed * scr->frame_time());
+        pitch += rotate_speed * scr->frame_time();
+        pitch = clip_pitch(pitch);
     }
     if (key_state[SDL_SCANCODE_DOWN]) {
-        orientation.rotate_pitch(-rotate_speed * scr->frame_time());
+        pitch -= rotate_speed * scr->frame_time();
+        pitch = clip_pitch(pitch);
     }
     if (key_state[SDL_SCANCODE_LEFT]) {
-        orientation.rotate_yaw(-rotate_speed * scr->frame_time());
+        yaw -= rotate_speed * scr->frame_time();
+        yaw = clip_yaw(yaw);
     }
     if (key_state[SDL_SCANCODE_RIGHT]) {
-        orientation.rotate_yaw(rotate_speed * scr->frame_time());
+        yaw += rotate_speed * scr->frame_time();
+        yaw = clip_yaw(yaw);
     }
     if (key_state[SDL_SCANCODE_W]) {
-        position += orientation * move_speed * scr->frame_time();
+        position += Vec3f(pitch, yaw) * move_speed * scr->frame_time();
     }
     if (key_state[SDL_SCANCODE_A]) {
-        Vec3f v = orientation;
-        v.rotate_yaw(-PI / 2);
-        position += v * move_speed * scr->frame_time();
+        position += Vec3f(0.0, yaw - PI / 2) * move_speed * scr->frame_time();
     }
     if (key_state[SDL_SCANCODE_D]) {
-        Vec3f v = orientation;
-        v.rotate_yaw(PI / 2);
-        position += v * move_speed * scr->frame_time();
+        position += Vec3f(0.0, yaw + PI / 2) * move_speed * scr->frame_time();
     }
     if (key_state[SDL_SCANCODE_S]) {
-        position -= orientation * move_speed * scr->frame_time();
+        position -= Vec3f(pitch, yaw) * move_speed * scr->frame_time();
     }
 }
 
 void Game::render_slice(int slice) {
-    float pitch = orientation.pitch();
-    float yaw = orientation.yaw();
+    Vec3f orientation(pitch, yaw);
+    Vec3f dx(0.0, yaw + PI / 2);
+    Vec3f dy(pitch - PI / 2, yaw);
+    Vec3f top_left = position + orientation * plane_distance -
+                     dy * (plane_height / 2.0 + 0.5) -
+                     dx * (plane_width / 2.0 + 0.5);
     for (int i = slice * scr->height / num_threads; i < (slice + 1) * scr->height / num_threads; ++i) {
         for (int j = 0; j < scr->width; ++j) {
             float r = 0;
             float g = 0;
             float b = 0;
             for (int sample = 0; sample < samples_per_pixel; ++sample) {
-                float plane_dist_y = plane_height / 2.0 - (i + 0.5 + jitter[0][sample]) * plane_height / scr->height;
-                float pitch_diff = atan(plane_dist_y / plane_distance);
-                float plane_dist_x = (j + 0.5 + jitter[1][sample]) * plane_width / scr->width - plane_width / 2.0;
-                float yaw_diff = atan(plane_dist_x / plane_distance);
-                float pitch_prime = pitch - pitch_diff;
-                float yaw_prime = yaw - yaw_diff;
-                Vec3f ray(yaw_prime, pitch_prime);
+                Vec3f pixel_center = top_left + dx * (j + jitter[0][sample]) +
+                                                dy * (i + jitter[1][sample]);
+                Vec3f ray = pixel_center - position;
+                ray.normalize();
                 
                 float min_d = numeric_limits<float>::max();
                 int sphere_index = -1;
@@ -125,9 +158,15 @@ void Game::render_slice(int slice) {
                     Vec3f light_vec = position - hit;
                     light_vec.normalize();
                     float shade = sphere_normal.dot(light_vec);
+#if 1
                     r += sphere.c.r * shade;
                     g += sphere.c.g * shade;
                     b += sphere.c.b * shade;
+#else
+                    r += sphere.c.r;
+                    g += sphere.c.g;
+                    b += sphere.c.b;
+#endif
                 }
             }
             scr->draw_pixel(j, i, {Uint8(rint(r / samples_per_pixel)), Uint8(rint(g / samples_per_pixel)), Uint8(rint(b / samples_per_pixel))});
@@ -137,6 +176,7 @@ void Game::render_slice(int slice) {
 
 void Game::draw_game() {
     scr->cls();
+#ifdef THREADED
     vector<future<void>> futures;
     futures.reserve(num_threads);
     for (int i = 0; i < num_threads; ++i) {
@@ -145,26 +185,33 @@ void Game::draw_game() {
     for (auto& f: futures) {
         f.get();
     }
+#else
+    render_slice(0);
+#endif
 }
 
 Game::Game(Screen* scr) :
     scr(scr),
-    hfov(fov),
     plane_width(scr->width),
     plane_height(scr->height),
     plane_distance(scr->width / (tan(fov / 2.0) * 2.0)),
-    orientation(0.0, 0.0, 1.0), // looks 1.0 in z direction
     position(0.0, 0.0, 0.0),
+    pitch(0.0),
+    yaw(0.0),
+#ifdef THREADED
     num_threads(4),
+#else
+    num_threads(1),
+#endif
     running(true) {
     scr->set_recording_style("images", 5);
     //SDL_SetRelativeMouseMode(SDL_TRUE);
     //spheres.push_back({{-1.0, 0.0, 10.0}, 1.0, {255, 0, 0}});
     //spheres.push_back({{0.0, 0.0, 10.0}, 1.0, {0, 255, 0}});
     //spheres.push_back({{1.0, 0.0, 10.0}, 1.0, {0, 0, 255}});
-    spheres.push_back({{-4.0/3.0, 0.0, 10.0}, 2.0/3.0, {255, 0, 0}});
-    spheres.push_back({{0.0, 0.0, 10.0}, 2.0/3.0, {0, 255, 0}});
-    spheres.push_back({{4.0/3.0, 0.0, 10.0}, 2.0/3.0, {0, 0, 255}});
+    spheres.push_back({{-4.0/3.0, 0.0, 8.0 / 3.0}, 2.0/3.0, {255, 0, 0}});
+    spheres.push_back({{0.0, 0.0, 8.0 / 3.0}, 2.0/3.0, {0, 255, 0}});
+    spheres.push_back({{4.0/3.0, 0.0, 8.0 / 3.0}, 2.0/3.0, {0, 0, 255}});
     scr->set_color(255, 0, 0);
     jitter[0][0] = 0.0;
     jitter[1][0] = 0.0;
