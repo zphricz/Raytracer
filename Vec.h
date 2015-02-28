@@ -190,7 +190,7 @@ public:
 };
 
 template<typename T, size_t N, bool C>
-static Vec<T, N, false> to_row(const Vec<T, N, C>& other) {
+Vec<T, N, false> to_row(const Vec<T, N, C>& other) {
     Vec<T, N, false> rval;
     static_assert(N > 0, "Vector cannot have a zero dimension");
     for (size_t i = 0; i < N; ++i) {
@@ -200,7 +200,7 @@ static Vec<T, N, false> to_row(const Vec<T, N, C>& other) {
 }
 
 template<typename T, size_t N, bool C>
-static Vec<T, N> to_col(const Vec<T, N, C>& other) {
+Vec<T, N> to_col(const Vec<T, N, C>& other) {
     Vec<T, N> rval;
     static_assert(N > 0, "Vector cannot have a zero dimension");
     for (size_t i = 0; i < N; ++i) {
@@ -456,35 +456,10 @@ public:
         static_assert(C == true, "Mismatched vector/matrix dimensions");
     }
 
-    static const Vec<T, 3> x_axis() {
-        return Vec<T, 3>(T(1), T(0), T(0));
-    }
-
-    static const Vec<T, 3> y_axis()  {
-        return Vec<T, 3>(T(0), T(1), T(0));
-    }
-
-    static const Vec<T, 3> z_axis() {
-        return Vec<T, 3>(T(0), T(0), T(1));
-    }
-
-    /*
-     * Pitch needs to be bounded by [-PI/2, PI/2]
-     */
-    /*Vec(T _yaw, T _pitch) :
+    Vec(T _pitch, T _yaw) :
         x(cos(_pitch) * sin(_yaw)),
         y(sin(_pitch)),
         z(cos(_pitch) * cos(_yaw)) {
-    }*/
-    Vec(T _pitch, T _yaw) :
-        x(0),
-        y(0),
-        z(1) {
-        rotate_x(_pitch);
-        rotate_y(_yaw);
-        /*x(cos(_pitch) * sin(_yaw)),
-        y(sin(_pitch)),
-        z(cos(_pitch) * cos(_yaw)) {*/
     }
 
     Vec(T x, T y, T z) :
@@ -497,6 +472,18 @@ public:
         Vec<T, 3, C> rval;
         rval.zero();
         return rval;
+    }
+
+    static Vec x_axis() {
+        return Vec<T, 3, C>(T(1), T(0), T(0));
+    }
+
+    static Vec y_axis()  {
+        return Vec<T, 3, C>(T(0), T(1), T(0));
+    }
+
+    static Vec z_axis() {
+        return Vec<T, 3, C>(T(0), T(0), T(1));
     }
 
     ~Vec() {
@@ -635,40 +622,6 @@ public:
         return atan2(x, z);
     }
 
-    // A positive delta will rotate the vector clockwise on the xz plane when
-    // viewed from the positive y axis
-    void rotate_yaw(T delta) {
-#if 1
-        auto temp = x * cos(delta) + z * sin(delta);
-        z = z * cos(delta) - x * sin(delta);
-        x = temp;
-#else
-        Matrix<T, 3, 3> lhs{{cos(delta),  T(0), sin(delta)},
-                            {T(0),         T(1),       T(0)},
-                            {-sin(delta), T(0), cos(delta)}};
-
-        // Figure out why the above doesn't work, but this does
-        /* Matrix<T, 3, 3> lhs = {{T(cos(delta)),  T(), T(sin(delta))},
-                            {T(),         T(1),       T()},
-                            {T(-sin(delta)), T(), T(cos(delta))}};*/
-        *this = lhs * *this;
-#endif
-    }
-
-    // A positive delta will rotate the vector towards the positive y axis
-    // A negative delta will rotate the vector towards the negative y axis
-    // The result of this function should not make pitch leave the range
-    //   of [-PI/2, PI/2]
-    void rotate_pitch(T delta) {
-        auto v = sqrt(x * x + z * z);
-        auto temp = y * cos(delta) + v * sin(delta);
-        auto new_v = v * cos(delta) - y * sin(delta);
-        auto factor = new_v / v;
-        x *= factor;
-        z *= factor;
-        y = temp;
-    }
-
     void rotate(const Vec<T, 3>& axis, T theta) {
         *this = *this * cos(theta) + (axis.cross(*this)) * sin(theta) +
             axis * (axis.dot(*this)) * (1 - cos(theta));
@@ -686,13 +639,11 @@ public:
         rotate(z_axis(), theta);
     }
 
-    void set_yaw(T _yaw) {
-        rotate_yaw(_yaw - yaw());
-    }
-
-    // _pitch should be in the range of  [-PI/2, PI/2]
-    void set_pitch(T _pitch) {
-        rotate_pitch(_pitch - pitch());
+    Vec reflect(const Vec<T, 3, C>& normal) {
+        T d = this->dot(normal);
+        return Vec<T, 3, C>(x - 2 * d * normal.x,
+                            y - 2 * d * normal.y,
+                            z - 2 * d * normal.z);
     }
 
     Vec cross(const Vec<T, 3, C>& other) const {

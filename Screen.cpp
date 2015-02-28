@@ -20,7 +20,8 @@ Screen::Screen(int size_x, int size_y, const char * name, bool full_screen,
     image_number(0),
     image_dir("."),
     z_fill(5),
-    vsynced(vsync) {
+    vsynced(vsync),
+    full_screen(full_screen) {
     if (full_screen) {
         window = SDL_CreateWindow(name, 0, 0, width, height,
                         SDL_WINDOW_FULLSCREEN);

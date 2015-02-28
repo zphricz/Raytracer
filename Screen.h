@@ -36,6 +36,7 @@ class Screen {
         int z_fill;
     public:
         const bool vsynced;
+        const bool full_screen;
     private:
         inline Uint32& pixel_at(int x, int y);
     public:
