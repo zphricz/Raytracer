@@ -2,16 +2,8 @@
 #include <iostream>
 #include "Screen.h"
 #include "Game.h"
-#include "Matrix.h"
 
 using namespace std;
-
-#include <random>
-#include <chrono>
-using namespace Linear;
-using namespace chrono;
-static const float PI = M_PI;
-static const float TWO_PI = M_PI * 2;
 
 static void error(char * name) {
     printf("Usage: %s [Screen_x Screen_y]\n", name);

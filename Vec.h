@@ -639,6 +639,7 @@ public:
         rotate(z_axis(), theta);
     }
 
+    // Reflects this vector along the plane specified by normal
     Vec reflect(const Vec<T, 3, C>& normal) {
         T d = this->dot(normal);
         return Vec<T, 3, C>(x - 2 * d * normal.x,

@@ -9,6 +9,7 @@ struct Sphere {
     Linear::Vec3f position;
     float radius;
     float reflectivity;
+    float spec_power;
     SDL_Color c;
 };
 
@@ -42,7 +43,8 @@ class Game {
         void draw_game();
         void calculate_vectors();
 
-        float trace(Linear::Vec3f origin, Linear::Vec3f direction, int& sphere_index, float cutoff = 0.001);
+        float detect_sphere_hit(Linear::Vec3f origin, Linear::Vec3f direction, int& sphere_index, float cutoff = 0.001);
+        void ray_trace(Linear::Vec3f origin, Linear::Vec3f direction, float amount, float& r, float& g, float& b, int depth = 0);
     public:
         Game(Screen* scr);
         ~Game();

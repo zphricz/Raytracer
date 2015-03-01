@@ -8,9 +8,6 @@
 
 #define THREADED
 
-using namespace std;
-using namespace Linear;
-
 constexpr float PI = M_PI;
 constexpr float TWO_PI = M_PI * 2.0;
 
@@ -18,9 +15,17 @@ static constexpr float rad(float theta) {
     return theta * PI / 180.0;
 }
 
-static constexpr float deg(float theta) {
-    return theta * 180.0 / PI;
-}
+//static SDL_Color background_color{255, 255, 255};
+static SDL_Color background_color{0, 0, 0};
+static float fov = rad(75.0);
+constexpr float move_speed = 3.0;
+constexpr float rotate_speed = PI / 2;
+constexpr int samples_per_pixel = 1;
+constexpr int cutoff_depth = 20;
+static float ambient = 0.08;
+
+using namespace std;
+using namespace Linear;
 
 static float clip_yaw(float yaw) {
     if (yaw < 0.0) {
@@ -41,13 +46,6 @@ static float clip_pitch(float pitch) {
     }
     return pitch;
 }
-
-constexpr float fov = rad(75.0);
-constexpr float move_speed = 3.0;
-constexpr float rotate_speed = PI / 2;
-constexpr int samples_per_pixel = 1;
-static float ambient = 0.08;
-static float spec_power = 100.0;
 
 random_device rd;
 mt19937 gen(rd());
@@ -117,20 +115,26 @@ void Game::handle_input() {
         yaw = clip_yaw(yaw);
         calculate_vectors();
     }
+    float speed_factor;
+    if (key_state[SDL_SCANCODE_LSHIFT] || key_state[SDL_SCANCODE_LSHIFT]) {
+        speed_factor = 4.0;
+    } else {
+        speed_factor = 1.0;
+    }
     if (key_state[SDL_SCANCODE_W]) {
-        position += Vec3f(pitch, yaw) * move_speed * scr->frame_time();
+        position += orientation * move_speed * scr->frame_time() * speed_factor;
         calculate_vectors();
     }
     if (key_state[SDL_SCANCODE_A]) {
-        position += Vec3f(0.0, yaw - PI / 2) * move_speed * scr->frame_time();
+        position -= dx * move_speed * scr->frame_time() * speed_factor;
         calculate_vectors();
     }
     if (key_state[SDL_SCANCODE_D]) {
-        position += Vec3f(0.0, yaw + PI / 2) * move_speed * scr->frame_time();
+        position += dx * move_speed * scr->frame_time() * speed_factor;
         calculate_vectors();
     }
     if (key_state[SDL_SCANCODE_S]) {
-        position -= Vec3f(pitch, yaw) * move_speed * scr->frame_time();
+        position -= orientation * move_speed * scr->frame_time() * speed_factor;
         calculate_vectors();
     }
     if (key_state[SDL_SCANCODE_1]) {
@@ -146,41 +150,49 @@ void Game::handle_input() {
         }
     }
     if (key_state[SDL_SCANCODE_3]) {
-        spec_power -= 1.0;
-        if (spec_power < 1.0) {
-            spec_power = 1.0;
+        fov += rad(1.0);
+        if (fov > rad(179.0)) {
+            fov -= rad(1.0);
         }
+        plane_distance = scr->width / (tan(fov / 2.0) * 2.0);
+        calculate_vectors();
     }
     if (key_state[SDL_SCANCODE_4]) {
-        spec_power += 1.0;
+        fov -= rad(1.0);
+        if (fov < rad(10.0)) {
+            fov += rad(1.0);
+        }
+        plane_distance = scr->width / (tan(fov / 2.0) * 2.0);
+        calculate_vectors();
     }
+
 }
 
 /* direction should be normalized */
-float Game::trace(Vec3f origin, Vec3f direction, int& sphere_index, float cutoff) {
-    float d = numeric_limits<float>::max();
+float Game::detect_sphere_hit(Vec3f origin, Vec3f direction, int& sphere_index, float cutoff) {
+    float scalar_distance = numeric_limits<float>::max();
     sphere_index = -1;
     int size = spheres.size();
     for (int i = 0; i < size; ++i) {
         Sphere& sphere = spheres[i];
         Vec3f distance = sphere.position - origin;
-        float B = direction.dot(distance);
-        float D = B * B - distance.dot(distance) + sphere.radius * sphere.radius;
-        if (D < 0.0) {
+        float b = direction.dot(distance);
+        float discriminant = b * b - distance.dot(distance) + sphere.radius * sphere.radius;
+        if (discriminant < 0.0) {
             continue;
         }
-        float t1 = B + sqrt(D);
-        if ((t1 > cutoff && t1 < d)) {
-            float t0 = B - sqrt(D);
+        float t1 = b + sqrt(discriminant);
+        if ((t1 > cutoff && t1 < scalar_distance)) {
+            float t0 = b - sqrt(discriminant);
             if (t0 > cutoff) {
-                d = t0;
+                scalar_distance = t0;
             } else {
-                d = t1;
+                scalar_distance = t1;
             }
             sphere_index = i;
         }
     }
-    return d;
+    return scalar_distance;
 }
 
 void Game::calculate_vectors() {
@@ -192,50 +204,63 @@ void Game::calculate_vectors() {
                      dx * (plane_width / 2.0 + 0.5);
 }
 
+void Game::ray_trace(Vec3f origin, Vec3f ray, float amount, float& r, float& g, float& b, int depth) {
+    int sphere_index;
+    float hit_distance = detect_sphere_hit(origin, ray, sphere_index);
+    if (sphere_index != -1) { // We hit a sphere
+        Sphere& sphere = spheres[sphere_index];
+        Vec3f hit_spot = origin + ray * hit_distance;
+        Vec3f sphere_normal = (hit_spot - sphere.position) / sphere.radius;
+        Vec3f ref = ray.reflect(sphere_normal);
+        for (Light& light: lights) {
+            Vec3f light_vec = light.position - hit_spot;
+            float light_distance = light_vec.magnitude();
+            light_vec.normalize();
+            int other_sphere_index; // I don't actually care about this
+            float shadow_hit_distance = detect_sphere_hit(hit_spot, light_vec, other_sphere_index);
+            // If there is nothing between this sphere and the light
+            if (shadow_hit_distance > light_distance) {
+                // This value should be positive, but for sitations when
+                // the sphere normal is orthogonal to the light vec,
+                // it may not be. Thus the abs()
+                float light_amount = abs(sphere_normal.dot(light_vec));
+                float square = light_distance * light_distance;
+                float specularity = 0.0;
+                if (sphere.spec_power > 0.0) {
+                    specularity = 255.0 * light.intensity * pow(max<float>(ref.dot(light_vec), 0.0), sphere.spec_power) / square;
+                }
+                r += (sphere.c.r * (light_amount * light.intensity / square + ambient) + specularity) * amount * (1.0 - sphere.reflectivity);
+                g += (sphere.c.g * (light_amount * light.intensity / square + ambient) + specularity) * amount * (1.0 - sphere.reflectivity);
+                b += (sphere.c.b * (light_amount * light.intensity / square + ambient) + specularity) * amount * (1.0 - sphere.reflectivity);
+            } else {
+                r += amount * sphere.c.r * (ambient) * (1.0 - sphere.reflectivity);
+                g += amount * sphere.c.g * (ambient) * (1.0 - sphere.reflectivity);
+                b += amount * sphere.c.b * (ambient) * (1.0 - sphere.reflectivity);
+            }
+        }
+        // Perform reflection ray trace
+        if (depth + 1 < cutoff_depth && amount * sphere.reflectivity > 1/256.0) {
+            ray_trace(hit_spot, ref, amount * sphere.reflectivity, r, g, b, depth + 1);
+        }
+    } else {
+        r += amount * background_color.r;
+        g += amount * background_color.g;
+        b += amount * background_color.b;
+    }
+}
+
 void Game::render_slice(int slice) {
-    int num_samples = samples_per_pixel * lights.size();
     for (int i = slice * scr->height / num_threads; i < (slice + 1) * scr->height / num_threads; ++i) {
         for (int j = 0; j < scr->width; ++j) {
-            float r = 0;
-            float g = 0;
-            float b = 0;
+            float r = 0.0;
+            float g = 0.0;
+            float b = 0.0;
             for (int sample = 0; sample < samples_per_pixel; ++sample) {
-                Vec3f pixel_center = top_left + dx * (j + jitter[0][sample]) +
+                Vec3f sample_point = top_left + dx * (j + jitter[0][sample]) +
                                                 dy * (i + jitter[1][sample]);
-                Vec3f ray = pixel_center - position;
+                Vec3f ray = sample_point - position;
                 ray.normalize();
-                int sphere_index;
-                float hit_distance = trace(position, ray, sphere_index);
-                if (sphere_index != -1) { // We hit a sphere
-                    Sphere& sphere = spheres[sphere_index];
-                    Vec3f hit = position + ray * hit_distance;
-                    for (Light& light: lights) {
-                        Vec3f light_vec = light.position - hit;
-                        float light_distance = light_vec.magnitude();
-                        light_vec.normalize();
-                        int other_sphere_index;
-                        float shadow_hit_distance = trace(hit, light_vec, other_sphere_index);
-                        if (shadow_hit_distance > light_distance) {
-                            Vec3f sphere_normal = (hit - sphere.position) / sphere.radius;
-                            // This value should be positive, but for sitations when
-                            // the sphere normal is orthogonal to the light vec,
-                            // it may not be. Thus the abs()
-                            float shade = abs(sphere_normal.dot(light_vec));
-                            float square = light_distance * light_distance;
-
-                            Vec3f ref = ray.reflect(sphere_normal);
-                            float specularity = 255.0 * pow(max<float>(ref.dot(light_vec), 0.0), spec_power);
-                            
-                            r += sphere.c.r * (shade * light.intensity / square + ambient) + specularity;
-                            g += sphere.c.g * (shade * light.intensity / square + ambient) + specularity;
-                            b += sphere.c.b * (shade * light.intensity / square + ambient) + specularity;
-                        } else {
-                            r += sphere.c.r * (ambient);
-                            g += sphere.c.g * (ambient);
-                            b += sphere.c.b * (ambient);
-                        }
-                    }
-                }
+                ray_trace(position, ray, 1.0, r, g, b);
             }
             r = min<int>(rint(r / samples_per_pixel), 255);
             g = min<int>(rint(g / samples_per_pixel), 255);
@@ -246,7 +271,7 @@ void Game::render_slice(int slice) {
 }
 
 void Game::draw_game() {
-    scr->cls();
+    scr->fill_screen(background_color);
 #ifdef THREADED
     vector<future<void>> futures;
     futures.reserve(num_threads);
@@ -279,10 +304,22 @@ Game::Game(Screen* scr) :
     calculate_vectors();
     scr->set_recording_style("images", 5);
 
-    spheres.push_back({{-4.0/3.0, 0.0, 8.0 / 3.0}, 2.0/3.0, 0.0, {150, 0, 0}});
-    spheres.push_back({{0.0, 0.5, 8.0 / 3.0}, 2.0/3.0, 0.0, {0, 150, 0}});
-    spheres.push_back({{4.0/3.0, 0.0, 8.0 / 3.0}, 2.0/3.0, 0.0, {0, 0, 150}});
-    lights.push_back({{1.0, 2.5, 8.0 / 3.0}, 5.0});
+    spheres.push_back({{-4.0/3.0, 0.0, 8.0 / 3.0},
+                       2.0/3.0,
+                       0.3,
+                       100.0,
+                       {150, 0, 0}});
+    spheres.push_back({{0.0, 0.5, 8.0 / 3.0},
+                       2.0/3.0,
+                       0.0,
+                       100.0,
+                       {0, 150, 0}});
+    spheres.push_back({{4.0/3.0, 0.0, 8.0 / 3.0},
+                       2.0/3.0,
+                       0.3,
+                       100.0,
+                       {0, 0, 150}});
+    lights.push_back({{1.0, 100.0, 8.0 / 3.0}, 10000.0});
     lights.push_back({{-10.0/3.0, -0.2, 8.0 / 3.0}, 6.0});
 
     scr->set_color(255, 0, 0);
