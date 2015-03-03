@@ -1,4 +1,4 @@
-CXXFLAGS = -std=c++11 -Ofast
+CXXFLAGS = -std=c++11 -Ofast -Wall -Werror
 LDFLAGS = -lSDL2
 OS = $(shell uname -s)
 SRC = $(wildcard *.cpp)
@@ -8,10 +8,11 @@ DEPS = $(patsubst %.cpp, %.d, $(SRC))
 ELFNAME = raytracer
 
 ifeq ($(OS), Darwin)
-	CXX = clang++
+	CXX = g++-4.9
 endif
 ifeq ($(OS), Linux)
 	LDFLAGS += -lpthread
+	LDFLAGS += -latomic
 	CXX = g++
 endif
 
