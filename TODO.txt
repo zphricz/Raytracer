@@ -1,0 +1,15 @@
+- Figure out why pixels tend to go black/white in the center of reflections
+- Figure out a correct lighting/reflection model
+- Add new primitives (cubes, rectangles, etc)
+- Add some form of texture mapping
+- Add tranparency and refraction
+- Make quad primitive more efficient and more correct (It currently is modelled as just a rectangle (not general quad)
+- Separate vertex and polygon definitions
+- Fix shadows appearing on the wrong side of quads
+- Add support for triangle meshes
+- Add support for colored lights
+- Add some degree of interactivity to the program (moving spheres/lights)
+- Make the scene be read in from a file as opposed to being hardcoded
+- Make everyting totally threadsafe? (It seems that by adding locks to this
+  program, performance noticeably degrades. The extra accuracy from doing this
+  seems to be negligible)

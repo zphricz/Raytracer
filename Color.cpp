@@ -21,9 +21,9 @@ SDL_Color blend(const SDL_Color& fg, const SDL_Color& bg) {
 }
 
 SDL_Color operator*(const SDL_Color& lhs, float factor) {
-    Uint8 out_r = min((int)(lhs.r * factor), 255);
-    Uint8 out_g = min((int)(lhs.g * factor), 255);
-    Uint8 out_b = min((int)(lhs.b * factor), 255);
+    Uint8 out_r = min<int>(rint(lhs.r * factor), 255);
+    Uint8 out_g = min<int>(rint(lhs.g * factor), 255);
+    Uint8 out_b = min<int>(rint(lhs.b * factor), 255);
     return {out_r, out_g, out_b, lhs.a};
 }
 
@@ -32,7 +32,8 @@ SDL_Color& operator*=(SDL_Color& lhs, float factor) {
 }
 
 SDL_Color operator/(const SDL_Color& lhs, float factor) {
-    return {Uint8(lhs.r / factor), Uint8(lhs.g / factor), Uint8(lhs.b / factor), lhs.a};
+    return {Uint8(rint(lhs.r / factor)), Uint8(rint(lhs.g / factor)),
+            Uint8(rint(lhs.b / factor)), lhs.a};
 }
 
 SDL_Color& operator/=(SDL_Color& lhs, float factor) {
