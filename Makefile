@@ -9,6 +9,7 @@ ELFNAME = raytracer
 
 ifeq ($(OS), Darwin)
 	CXX = clang++
+	#CXX = g++-4.9
 endif
 ifeq ($(OS), Linux)
 	CXX = g++
