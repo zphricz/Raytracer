@@ -1,18 +1,19 @@
 CXXFLAGS = -std=c++11 -Ofast -Wall -Werror
-LDFLAGS = -lSDL2 -lpthread
+LDFLAGS = -lSDL2
 OS = $(shell uname -s)
 SRC = $(wildcard *.cpp)
-OBJECTS = $(patsubst %.cpp, %.o, $(SRC))
-HEADERS = $(patsubst %.cpp, %.h, $(SRC))
-DEPS = $(patsubst %.cpp, %.d, $(SRC))
+HEADERS = $(wildcard *.cpp)
+OBJECTS = $(patsubst %.cpp, $(OBJDIR)/%.o, $(SRC))
+DEPS = $(patsubst %.cpp, $(OBJDIR)/%.d, $(SRC))
+OBJDIR = objs
 ELFNAME = raytracer
 
 ifeq ($(OS), Darwin)
 	CXX = clang++
-	#CXX = g++-4.9
 endif
 ifeq ($(OS), Linux)
 	CXX = g++
+	LDFLAGS = -lpthread
 endif
 
 all: $(ELFNAME)
@@ -20,10 +21,15 @@ all: $(ELFNAME)
 $(ELFNAME): $(OBJECTS)
 	$(CXX) $(CXXFLAGS) -o$@ $^ $(LDFLAGS) 
 
-%.o: %.cpp
+$(OBJDIR)/%.o: %.cpp $(OBJDIR)
 	$(CXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
+
+$(OBJDIR):
+	    mkdir -p $(OBJDIR)
 
 -include $(DEPS)
 
 clean:
-	rm -f *.d *.o $(ELFNAME)
+	rm -f $(OBJDIR)/*.o
+	rm -f $(OBJDIR)/*.d
+	rm -f $(ELFNAME)

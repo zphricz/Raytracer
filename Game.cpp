@@ -585,8 +585,8 @@ Game::Game(SoftScreen *scr, int num_threads)
                       -1.0,
                       {0, 0, 100}});
 #endif
-  lights.push_back({{-9.0, 16.0, 8.0}, 200.0, 1.0});
-  lights.push_back({{9.0, 16.0, 8.0}, 200.0, 1.0});
+  lights.push_back({{-20.0, 16.0, 8.0}, 300.0, 1.0});
+  lights.push_back({{0.0, 16.0, 8.0}, 150.0, 1.0});
 
   calculate_quad_normals();
   SDL_SetRelativeMouseMode(SDL_TRUE);
