@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <random>
 #include "Game.h"
+#include "Threadpool.h"
 
 constexpr float PI = M_PI;
 constexpr float TWO_PI = M_PI * 2.0;
@@ -84,9 +85,9 @@ void Game::handle_input() {
       break;
     }
   }
-  Vec3f dz = Vec3f(pitch, yaw);
-  Vec3f dx = Vec3f(0.0, yaw + PI / 2);
-  Vec3f dy = Vec3f(pitch - PI / 2, yaw);
+  Vec3f unit_dz = Vec3f(pitch, yaw);
+  Vec3f unit_dx = Vec3f(0.0, yaw + PI / 2);
+  Vec3f unit_dy = Vec3f(pitch - PI / 2, yaw);
   float speed_factor;
   if (!input_disabled) {
     if (key_state[SDL_SCANCODE_LSHIFT] || key_state[SDL_SCANCODE_LSHIFT]) {
@@ -95,19 +96,19 @@ void Game::handle_input() {
       speed_factor = 1.0;
     }
     if (key_state[SDL_SCANCODE_W]) {
-      position += dz * move_speed * scr->frame_time() * speed_factor;
+      position += unit_dz * move_speed * scr->frame_time() * speed_factor;
       change_model = true;
     }
     if (key_state[SDL_SCANCODE_A]) {
-      position -= dx * move_speed * scr->frame_time() * speed_factor;
+      position -= unit_dx * move_speed * scr->frame_time() * speed_factor;
       change_model = true;
     }
     if (key_state[SDL_SCANCODE_D]) {
-      position += dx * move_speed * scr->frame_time() * speed_factor;
+      position += unit_dx * move_speed * scr->frame_time() * speed_factor;
       change_model = true;
     }
     if (key_state[SDL_SCANCODE_S]) {
-      position -= dz * move_speed * scr->frame_time() * speed_factor;
+      position -= unit_dz * move_speed * scr->frame_time() * speed_factor;
       change_model = true;
     }
     if (key_state[SDL_SCANCODE_1]) {
@@ -164,8 +165,18 @@ void Game::handle_input() {
     }
   }
   if (change_model) {
-    model_number++;
-    rays_at_last_model_change = rays_cast;
+    for (auto &acc : accumulators) {
+      acc.r = 0.0;
+      acc.g = 0.0;
+      acc.b = 0.0;
+      acc.count = 0;
+    }
+    ratio = focus_length / plane_distance;
+    dz = Vec3f(pitch, yaw) * ratio;
+    dx = Vec3f(0.0, yaw + PI / 2) * ratio;
+    dy = Vec3f(pitch - PI / 2, yaw) * ratio;
+    top_left = position + dz * plane_distance - dx * scr->width / 2.0 -
+               dy * scr->height / 2.0;
   }
 }
 
@@ -456,76 +467,60 @@ void Game::ray_trace(Vec3f origin, Vec3f ray, float &r, float &g, float &b,
   }
 }
 
-void Game::render_loop() {
-  uint32_t model = model_number;
-  float ratio = focus_length / plane_distance;
-  Vec3f dz = Vec3f(pitch, yaw) * ratio;
-  Vec3f dx = Vec3f(0.0, yaw + PI / 2) * ratio;
-  Vec3f dy = Vec3f(pitch - PI / 2, yaw) * ratio;
-  Vec3f top_left = position + dz * plane_distance - dx * scr->width / 2.0 -
-                   dy * scr->height / 2.0;
-  while (running) {
-    uint64_t sample = rays_cast.fetch_add(1);
-    sample %= scr->width * scr->height;
-    int i = sample / scr->width;
-    int j = sample % scr->width;
-    float theta = rand_float(0.0, 2.0 * PI);
-    float dof_mag = rand_float(0.0, dof_blur_amount);
-    Vec3f sample_start =
-        position + dof_mag * (dx * cos(theta) + dy * sin(theta));
-    constexpr float jitter_amount = 1.0;
-    float jitter_x =
-        rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
-    float jitter_y =
-        rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
-    Vec3f sample_end = top_left + dx * (jitter_x + j) + dy * (jitter_y + i);
-    Vec3f ray = (sample_end - sample_start).normal();
-    float r = 0.0;
-    float g = 0.0;
-    float b = 0.0;
-    ray_trace(sample_start, ray, r, g, b);
+void Game::render_slice(int slice) {
+  int nthreads = Threadpool::get_num_threads();
+  for (int i = slice * scr->height / nthreads; i < (slice + 1) * scr->height / nthreads; ++i) {
+    for (int j = 0; j < scr->width; ++j) {
+      float theta = rand_float(0.0, 2.0 * PI);
+      float dof_mag = rand_float(0.0, dof_blur_amount);
+      Vec3f sample_start =
+          position + dof_mag * (dx * cos(theta) + dy * sin(theta));
+      constexpr float jitter_amount = 1.0;
+      float jitter_x =
+          rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
+      float jitter_y =
+          rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
+      Vec3f sample_end = top_left + dx * (jitter_x + j) + dy * (jitter_y + i);
+      Vec3f ray = (sample_end - sample_start).normal();
+      float r = 0.0;
+      float g = 0.0;
+      float b = 0.0;
+      ray_trace(sample_start, ray, r, g, b);
 #if 1
-    /*r = min<float>(r, 255.0);
-    g = min<float>(g, 255.0);
-    b = min<float>(b, 255.0);*/
-    float m = max<float>(max<float>(r, g), b);
-    if (m > 255.0) {
-      r *= 255.0 / m;
-      g *= 255.0 / m;
-      b *= 255.0 / m;
-    }
-#endif
-    if (model != model_number) {
-      model = model_number;
-      ratio = focus_length / plane_distance;
-      dz = Vec3f(pitch, yaw) * ratio;
-      dx = Vec3f(0.0, yaw + PI / 2) * ratio;
-      dy = Vec3f(pitch - PI / 2, yaw) * ratio;
-      top_left = position + dz * plane_distance - dx * scr->width / 2.0 -
-                 dy * scr->height / 2.0;
-    } else {
-      if (accumulators[sample].model_number != model) {
-        accumulators[sample].r = r;
-        accumulators[sample].g = g;
-        accumulators[sample].b = b;
-        accumulators[sample].count = 1;
-        accumulators[sample].model_number = model;
-      } else {
-        accumulators[sample].r += r;
-        accumulators[sample].g += g;
-        accumulators[sample].b += b;
-        accumulators[sample].count++;
+      /*r = min<float>(r, 255.0);
+      g = min<float>(g, 255.0);
+      b = min<float>(b, 255.0);*/
+      float m = max<float>(max<float>(r, g), b);
+      if (m > 255.0) {
+        r *= 255.0 / m;
+        g *= 255.0 / m;
+        b *= 255.0 / m;
       }
+#endif
+      int sample = i * scr->width + j;
+      accumulators[sample].r += r;
+      accumulators[sample].g += g;
+      accumulators[sample].b += b;
+      accumulators[sample].count++;
+      Uint8 draw_r = Uint8(rint(min<float>(accumulators[sample].r /
+                                      accumulators[sample].count,
+                                      255.0)));
+      Uint8 draw_g = Uint8(rint(min<float>(accumulators[sample].g /
+                                      accumulators[sample].count,
+                                      255.0)));
+      Uint8 draw_b = Uint8(rint(min<float>(accumulators[sample].b /
+                                      accumulators[sample].count,
+                                      255.0)));
+      scr->draw_pixel(j, i, {draw_r, draw_g, draw_b});
     }
   }
 }
 
-Game::Game(SoftScreen *scr, int num_threads)
-    : scr(scr), model_number(0), rays_cast(0), running(true),
+Game::Game(PerfSoftScreen *scr)
+    : scr(scr), running(true),
       plane_distance(scr->width / (tan(rad(80.0) / 2.0) * 2.0)), pitch(0.0),
       yaw(0.0), fov(rad(80.0)), ambient_light_quantity(0.1),
       dof_blur_amount(0.0), position(0.0, 0.0, 0.0),
-      rays_at_last_model_change(0), num_threads(num_threads),
       input_disabled(false) {
   scr->set_recording_style("images", 5);
   spheres.push_back(
@@ -599,61 +594,41 @@ Game::Game(SoftScreen *scr, int num_threads)
     acc.g = 0.0;
     acc.b = 0.0;
     acc.count = 0;
-    acc.model_number = 0;
   }
+  ratio = focus_length / plane_distance;
+  dz = Vec3f(pitch, yaw) * ratio;
+  dx = Vec3f(0.0, yaw + PI / 2) * ratio;
+  dy = Vec3f(pitch - PI / 2, yaw) * ratio;
+  top_left = position + dz * plane_distance - dx * scr->width / 2.0 -
+             dy * scr->height / 2.0;
 }
 
 Game::~Game() {
-  cout << "TOTAL NUMBER OF RAYS CAST: " << rays_cast - rays_at_last_model_change
-       << endl;
+  /*cout << "TOTAL NUMBER OF RAYS CAST: " << rays_cast - rays_at_last_model_change
+       << endl;*/
   scr->write_tga("exit.tga");
 }
 
 void Game::run() {
-  vector<thread> threads;
-  for (int i = 0; i < num_threads; ++i) {
-    threads.push_back(thread(&Game::render_loop, this));
-  }
   int frame_count = 0;
-  uint64_t last_rays_cast = 0;
   high_resolution_clock::time_point last_time = high_resolution_clock::now();
   high_resolution_clock::time_point current_time;
   while (running) {
-    for (int i = 0; i < scr->height; ++i) {
-      for (int j = 0; j < scr->width; ++j) {
-        if (accumulators[i * scr->width + j].count > 0) {
-          Uint8 r =
-              Uint8(rint(min<float>(accumulators[i * scr->width + j].r /
-                                    accumulators[i * scr->width + j].count,
-                                    255.0)));
-          Uint8 g =
-              Uint8(rint(min<float>(accumulators[i * scr->width + j].g /
-                                    accumulators[i * scr->width + j].count,
-                                    255.0)));
-          Uint8 b =
-              Uint8(rint(min<float>(accumulators[i * scr->width + j].b /
-                                    accumulators[i * scr->width + j].count,
-                                    255.0)));
-          scr->draw_pixel(j, i, {r, g, b});
-        }
-      }
+    for (int i = 0; i < Threadpool::get_num_threads(); ++i) {
+      Threadpool::submit_task(&Game::render_slice, this, i);
     }
+    Threadpool::wait_for_all_jobs();
+    scr->commit();
     handle_input();
     frame_count++;
     if (frame_count == 10) {
-      uint64_t this_rays_cast = rays_cast;
       current_time = high_resolution_clock::now();
       cout << "RAYS PER SECOND: "
-           << (this_rays_cast - last_rays_cast) /
+           << (scr->width * scr->height * 10) /
                   duration_cast<duration<float>>(current_time - last_time)
                       .count() << endl;
-      last_rays_cast = this_rays_cast;
       last_time = current_time;
       frame_count = 0;
     }
-    scr->commit();
-  }
-  for (auto &t : threads) {
-    t.join();
   }
 }

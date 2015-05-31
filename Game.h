@@ -2,7 +2,6 @@
 #define GAME_H
 
 #include <vector>
-#include <atomic>
 #include <limits>
 #include "Screen.h"
 #include "Vec.h"
@@ -17,15 +16,17 @@ struct ColorAccumulator {
   float g;
   float b;
   uint32_t count;
-  uint32_t model_number;
 };
 
 class Game {
 private:
-  SoftScreen *scr;
-  std::atomic<uint32_t> model_number;
-  std::atomic<uint64_t> rays_cast;
-  std::atomic<bool> running;
+  PerfSoftScreen *scr;
+  Linear::Vec3f top_left;
+  Linear::Vec3f dz;
+  Linear::Vec3f dx;
+  Linear::Vec3f dy;
+  float ratio;
+  bool running;
   float plane_distance;
   float pitch;
   float yaw;
@@ -38,11 +39,9 @@ private:
   std::vector<Quad> quads;
   std::vector<Plane> planes;
   std::vector<Light> lights;
-  uint64_t rays_at_last_model_change;
-  const int num_threads;
   bool input_disabled;
 
-  void render_loop();
+  void render_slice(int slice);
   void handle_input();
   void calculate_quad_normals();
 
@@ -72,7 +71,7 @@ private:
                  float &b, float weight = 1.0, int depth = 0);
 
 public:
-  Game(SoftScreen *scr, int num_threads);
+  Game(PerfSoftScreen *scr);
   ~Game();
   void run();
 };
