@@ -21,24 +21,20 @@ constexpr int bshift = 0;
  * same thread as the thread that instantiated the Screen. If the only draw
  * calls being made are to draw_pixel(), it would likely be more efficient for
  * the Screen to be instantiated as a software renderer. When instantiated as
- * a hardware renderer, all draw calls are clipped and DIRECT has no effect.
- * When instantiated as a hardware renderer, some functionality is lost (such
- * as the ability to draw out the current Screen state and to record movies.
- * Because of the differences in the way that the hardware and software
- * Screens are handled, it is not entirely true that replacing a software
- * Screen for a hardware one will produce the same image. To ensure that the
- * same image is produced, you should make sure to always draw to the entire
- * Screen.
+ * a hardware renderer, all draw calls are clipped. When instantiated as a
+ * hardware renderer, some functionality is lost (such as the ability to draw
+ * out the current Screen state and to record movies. The Screens are double
+ * buffered. Because of this, you need to make sure that you draw to the whole
+ * Screen before calling commit(), or else pixels from the frame before last
+ * will appear on screen again.
  */
 
 /*
  * SOFT sets whether or not the Screen uses a software or hardware renderer
  * for drawing. CLIPPED sets whether or not to clip all drawing functions.
- * Setting it to true will reduce performance. Direct sets whether to draw
- * into an SDL buffer directly for the software renderer. Setting it to true
- * will increase performance, but may introduce certain graphical artifacts.
+ * Setting it to true will reduce performance.
  */
-template <bool SOFT = true, bool CLIPPED = true, bool DIRECT = false>
+template <bool SOFT = true, bool CLIPPED = true>
 class Screen {
 public:
   // It should be pretty obvious what this does
@@ -103,12 +99,13 @@ public:
   void fill_circle(int x, int y, int r);
   void fill_circle(int x, int y, int r, SDL_Color c);
 
-  // Draws the current state of the screen into a .tga file. Does not work
-  // for hardware Sceens, and not guaranteed to work for DIRECT Screens
+  // Draws the current state of the screen into a .tga file. Call this directly
+  // before a commit(). If instead you call it right after a commit, it will
+  // draw the frame that was committed before the one that was just comitted.
+  // This function does not work for hardware screens.
   void write_tga(const char *name);
   // Toggles whether or not to save each committed screen to a .tga file Does
-  // not work for hardware Sceens, and not guaranteed to work for DIRECT
-  // Screens
+  // not work for hardware Sceens.
   void toggle_recording();
   // Sets the directory to save recorded frames to and how many '0' characters
   // to pad their name to
@@ -120,15 +117,15 @@ public:
   float fps();
 };
 
-// A clipped software screen that doesn't direct draw
-typedef Screen<true, true, false> SoftScreen;
+// A clipped software screen
+typedef Screen<true, true> SoftScreen;
+// A software screen that isn't clipped
+typedef Screen<true, false> PerfSoftScreen;
 // A clipped hardware screen
-typedef Screen<false, true, false> HardScreen;
-// A software screen that isn't clipped and draws directly
-typedef Screen<true, false, true> PerfSoftScreen;
+typedef Screen<false, true> HardScreen;
 
 /* Implementation of software Screen */
-template <bool CLIPPED, bool DIRECT> class Screen<true, CLIPPED, DIRECT> {
+template <bool CLIPPED> class Screen<true, CLIPPED> {
 private:
   Uint32 *pixels;
   Uint32 default_color;
@@ -140,9 +137,11 @@ public:
 private:
   SDL_Window *window;
   SDL_Renderer *renderer;
-  SDL_Texture *texture;
+  SDL_Texture *buffer_0; // First buffer
+  SDL_Texture *buffer_1; // Second buffer
   std::chrono::high_resolution_clock::time_point last_frame_time;
   std::chrono::high_resolution_clock::time_point current_frame_time;
+  bool buffer_flipper; // Controls which texture draw calls draw to
   bool recording;
   int image_number;
   std::string image_dir;
@@ -370,8 +369,9 @@ private:
 public:
   Screen(int size_x, int size_y, const char *name, bool full_screen, bool vsync)
       : default_color(format_color(255, 255, 255)), width(size_x),
-        height(size_y), recording(false), image_number(0), image_dir("."),
-        z_fill(5), vsynced(vsync), full_screen(full_screen) {
+        height(size_y), buffer_flipper(false), recording(false),
+        image_number(0), image_dir("."), z_fill(5), vsynced(vsync),
+        full_screen(full_screen) {
     if (full_screen) {
       window =
           SDL_CreateWindow(name, 0, 0, width, height, SDL_WINDOW_FULLSCREEN);
@@ -384,33 +384,28 @@ public:
     } else {
       renderer = SDL_CreateRenderer(window, -1, 0);
     }
-    if (DIRECT) {
-      texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                                  SDL_TEXTUREACCESS_STREAMING, width, height);
-      int pitch;
-      SDL_LockTexture(texture, nullptr, reinterpret_cast<void **>(&pixels),
-                      &pitch);
-    } else {
-      texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                                  SDL_TEXTUREACCESS_STATIC, width, height);
-      pixels = new Uint32[width * height];
-    }
+    buffer_0 = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                 SDL_TEXTUREACCESS_STREAMING, width, height);
+    buffer_1 = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+                                 SDL_TEXTUREACCESS_STREAMING, width, height);
+    int pitch;
+    SDL_LockTexture(buffer_0, nullptr, reinterpret_cast<void **>(&pixels),
+                    &pitch);
     current_frame_time = last_frame_time =
         std::chrono::high_resolution_clock::now();
   }
 
   ~Screen() {
-    if (DIRECT) {
-      SDL_UnlockTexture(texture);
+    if (!buffer_flipper) {
+      SDL_UnlockTexture(buffer_0);
     } else {
-      delete[] pixels;
+      SDL_UnlockTexture(buffer_1);
     }
-    SDL_DestroyTexture(texture);
+    SDL_DestroyTexture(buffer_0);
+    SDL_DestroyTexture(buffer_1);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
   }
-
-  bool is_direct_draw() { return DIRECT; }
 
   bool is_vsync() { return vsynced; }
 
@@ -428,20 +423,23 @@ public:
       write_tga(name.c_str());
       image_number++;
     }
-    if (DIRECT) {
-      SDL_UnlockTexture(texture);
+    int pitch;
+    if (!buffer_flipper) {
+      SDL_UnlockTexture(buffer_0);
+      SDL_RenderCopy(renderer, buffer_0, nullptr, nullptr);
+      SDL_RenderPresent(renderer);
+      SDL_LockTexture(buffer_1, nullptr, reinterpret_cast<void **>(&pixels),
+                      &pitch);
     } else {
-      SDL_UpdateTexture(texture, nullptr, pixels, width * sizeof(Uint32));
-    }
-    SDL_RenderCopy(renderer, texture, nullptr, nullptr);
-    SDL_RenderPresent(renderer);
-    if (DIRECT) {
-      int pitch;
-      SDL_LockTexture(texture, nullptr, reinterpret_cast<void **>(&pixels),
+      SDL_UnlockTexture(buffer_1);
+      SDL_RenderCopy(renderer, buffer_1, nullptr, nullptr);
+      SDL_RenderPresent(renderer);
+      SDL_LockTexture(buffer_0, nullptr, reinterpret_cast<void **>(&pixels),
                       &pitch);
     }
     last_frame_time = current_frame_time;
     current_frame_time = std::chrono::high_resolution_clock::now();
+    buffer_flipper = !buffer_flipper;
   }
 
   bool on_screen(int x, int y) {
@@ -564,7 +562,7 @@ public:
 };
 
 /* Implementation of hardware Screen */
-template <bool CLIPPED, bool DIRECT> class Screen<false, CLIPPED, DIRECT> {
+template <bool CLIPPED> class Screen<false, CLIPPED> {
 private:
   Uint32 *pixels;
   SDL_Color default_color;
@@ -600,8 +598,6 @@ public:
       : default_color({255, 255, 255}), width(size_x), height(size_y),
         vsynced(vsync), full_screen(full_screen) {
     static_assert(CLIPPED == true, "Hardware Screens can only be clipped");
-    static_assert(DIRECT == false, "Direct drawing only affects software "
-                                   "renderers");
     if (full_screen) {
       window =
           SDL_CreateWindow(name, 0, 0, width, height, SDL_WINDOW_FULLSCREEN);

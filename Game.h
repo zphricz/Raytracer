@@ -42,6 +42,7 @@ private:
   bool input_disabled;
 
   void render_slice(int slice);
+  void draw_slice(int slice);
   void handle_input();
   void calculate_quad_normals();
 

@@ -471,6 +471,7 @@ void Game::render_slice(int slice) {
   int nthreads = Threadpool::get_num_threads();
   for (int i = slice * scr->height / nthreads; i < (slice + 1) * scr->height / nthreads; ++i) {
     for (int j = 0; j < scr->width; ++j) {
+      int sample = i * scr->width + j;
       float theta = rand_float(0.0, 2.0 * PI);
       float dof_mag = rand_float(0.0, dof_blur_amount);
       Vec3f sample_start =
@@ -497,21 +498,29 @@ void Game::render_slice(int slice) {
         b *= 255.0 / m;
       }
 #endif
-      int sample = i * scr->width + j;
       accumulators[sample].r += r;
       accumulators[sample].g += g;
       accumulators[sample].b += b;
       accumulators[sample].count++;
-      Uint8 draw_r = Uint8(rint(min<float>(accumulators[sample].r /
+    }
+  }
+}
+
+void Game::draw_slice(int slice) {
+  int nthreads = Threadpool::get_num_threads();
+  for (int i = slice * scr->height / nthreads; i < (slice + 1) * scr->height / nthreads; ++i) {
+    for (int j = 0; j < scr->width; ++j) {
+      int sample = i * scr->width + j;
+      Uint8 r = Uint8(rint(min<float>(accumulators[sample].r /
+                                 accumulators[sample].count,
+                                 255.0)));
+      Uint8 g = Uint8(rint(min<float>(accumulators[sample].g /
+                                 accumulators[sample].count,
+                                 255.0)));
+      Uint8 b = Uint8(rint(min<float>(accumulators[sample].b /
                                       accumulators[sample].count,
                                       255.0)));
-      Uint8 draw_g = Uint8(rint(min<float>(accumulators[sample].g /
-                                      accumulators[sample].count,
-                                      255.0)));
-      Uint8 draw_b = Uint8(rint(min<float>(accumulators[sample].b /
-                                      accumulators[sample].count,
-                                      255.0)));
-      scr->draw_pixel(j, i, {draw_r, draw_g, draw_b});
+      scr->draw_pixel(j, i, {r, g, b});
     }
   }
 }
@@ -604,31 +613,32 @@ Game::Game(PerfSoftScreen *scr)
 }
 
 Game::~Game() {
-  /*cout << "TOTAL NUMBER OF RAYS CAST: " << rays_cast - rays_at_last_model_change
-       << endl;*/
   scr->write_tga("exit.tga");
 }
 
 void Game::run() {
-  int frame_count = 0;
   high_resolution_clock::time_point last_time = high_resolution_clock::now();
   high_resolution_clock::time_point current_time;
+  int nthreads = Threadpool::get_num_threads();
   while (running) {
-    for (int i = 0; i < Threadpool::get_num_threads(); ++i) {
+    for (int i = 0; i < nthreads; ++i) {
       Threadpool::submit_task(&Game::render_slice, this, i);
     }
     Threadpool::wait_for_all_jobs();
-    scr->commit();
-    handle_input();
-    frame_count++;
-    if (frame_count == 10) {
-      current_time = high_resolution_clock::now();
-      cout << "RAYS PER SECOND: "
-           << (scr->width * scr->height * 10) /
-                  duration_cast<duration<float>>(current_time - last_time)
-                      .count() << endl;
-      last_time = current_time;
-      frame_count = 0;
+    for (int i = 0; i < nthreads; ++i) {
+      Threadpool::submit_task(&Game::draw_slice, this, i);
     }
+    Threadpool::wait_for_all_jobs();
+    handle_input();
+    if (!running) {
+      break;
+    }
+    scr->commit();
+    current_time = high_resolution_clock::now();
+    cout << "RAYS PER SECOND: "
+         << (scr->width * scr->height) /
+                duration_cast<duration<float>>(current_time - last_time)
+                    .count() << endl;
+    last_time = current_time;
   }
 }
