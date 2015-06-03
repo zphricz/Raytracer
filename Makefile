@@ -1,3 +1,6 @@
+ELFNAME = raytracer
+SUBMODULES = Linear Threadpool Screen
+OBJDIR = objs
 CXXFLAGS = -std=c++11 -Ofast -Wall -Werror
 LDFLAGS = -lSDL2
 OS = $(shell uname -s)
@@ -5,8 +8,7 @@ SRC = $(wildcard *.cpp)
 HEADERS = $(wildcard *.h)
 OBJECTS = $(patsubst %.cpp, $(OBJDIR)/%.o, $(SRC))
 DEPS = $(patsubst %.cpp, $(OBJDIR)/%.d, $(SRC))
-OBJDIR = objs
-ELFNAME = raytracer
+CXXFLAGS += $(foreach SUBMOD, $(SUBMODULES), -I $(SUBMOD))
 
 ifeq ($(OS), Darwin)
 	CXX = clang++
@@ -33,3 +35,4 @@ clean:
 	rm -f $(OBJDIR)/*.o
 	rm -f $(OBJDIR)/*.d
 	rm -f $(ELFNAME)
+

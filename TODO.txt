@@ -9,7 +9,4 @@
 - Add support for colored lights
 - Add some degree of interactivity to the program (moving spheres/lights)
 - Make the scene be read in from a file as opposed to being hardcoded
-- Make everyting totally threadsafe? (It seems that by adding locks to this
-  program, performance noticeably degrades. The extra accuracy from doing this
-  seems to be negligible)
 - Add OpenCL acceleration?
