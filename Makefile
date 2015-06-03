@@ -27,7 +27,7 @@ $(OBJDIR)/%.o: %.cpp | $(OBJDIR)
 	$(CXX) $(CXXFLAGS) -c -MMD -MP $< -o $@
 
 $(OBJDIR):
-	    mkdir -p $(OBJDIR)
+	mkdir -p $(OBJDIR)
 
 -include $(DEPS)
 
