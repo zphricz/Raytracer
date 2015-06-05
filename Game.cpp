@@ -22,14 +22,16 @@ using namespace std;
 using namespace Linear;
 using namespace chrono;
 
+static bool use_random = true;
 static float rand_float(float range_start, float range_end) {
-#if 1
   static thread_local mt19937 gen;
   uniform_real_distribution<float> dis(range_start, range_end);
-  return dis(gen);
-#else
-  return (range_start + range_end) / 2.0;
-#endif
+  if (use_random) {
+    return dis(gen);
+  } else {
+    return range_start;
+    //return (range_start + range_end) / 2.0;
+  }
 }
 
 static float change_yaw(float yaw, float theta) {
@@ -67,7 +69,11 @@ void Game::handle_input() {
         }
         break;
       case SDLK_SPACE:
-        scr->write_tga("image.tga");
+        scr->write_bmp("image.tga");
+        break;
+      case SDLK_9:
+        use_random = !use_random;
+        change_model = true;
         break;
       default:
         break;
@@ -385,7 +391,7 @@ void Game::ray_trace(Vec3f origin, Vec3f ray, float &r, float &g, float &b,
   // lights get sampled at the same point relative to their center and size
   static thread_local Vec3f sample_vec;
   if (depth == 0) {
-    sample_vec = rand_float(0.0, 1.0) * Vec3f(rand_float(-PI / 2.0, PI / 2.0), rand_float(0.0, 2.0 * PI));
+    sample_vec = std::cbrt(rand_float(0.0, 1.0)) * Vec3f(rand_float(-PI / 2.0, PI / 2.0), rand_float(0.0, 2.0 * PI));
   }
   Vec3f reflection = ray.reflection(normal);
   for (Light &light : lights) {
@@ -613,7 +619,7 @@ Game::Game(PerfSoftScreen *scr)
 }
 
 Game::~Game() {
-  scr->write_tga("exit.tga");
+  scr->write_bmp("exit.bmp");
 }
 
 void Game::run() {

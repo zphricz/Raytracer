@@ -6,9 +6,9 @@ LDFLAGS = -lSDL2
 OS = $(shell uname -s)
 SRC = $(wildcard *.cpp)
 HEADERS = $(wildcard *.h)
-OBJECTS = $(patsubst %.cpp, $(OBJDIR)/%.o, $(SRC))
-DEPS = $(patsubst %.cpp, $(OBJDIR)/%.d, $(SRC))
-CXXFLAGS += $(foreach SUBMOD, $(SUBMODULES), -I $(SUBMOD))
+OBJECTS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(SRC))
+DEPS = $(patsubst %.cpp,$(OBJDIR)/%.d,$(SRC))
+CXXFLAGS += $(foreach SUBMOD,$(SUBMODULES),-I $(SUBMOD))
 
 ifeq ($(OS), Darwin)
 	CXX = clang++
