@@ -391,7 +391,7 @@ void Game::ray_trace(Vec3f origin, Vec3f ray, float &r, float &g, float &b,
   // lights get sampled at the same point relative to their center and size
   static thread_local Vec3f sample_vec;
   if (depth == 0) {
-    sample_vec = std::cbrt(rand_float(0.0, 1.0)) * Vec3f(rand_float(-PI / 2.0, PI / 2.0), rand_float(0.0, 2.0 * PI));
+    sample_vec = cbrt(rand_float(0.0, 1.0)) * Vec3f(rand_float(-PI / 2.0, PI / 2.0), rand_float(0.0, 2.0 * PI));
   }
   Vec3f reflection = ray.reflection(normal);
   for (Light &light : lights) {
@@ -479,7 +479,8 @@ void Game::render_slice(int slice) {
     for (int j = 0; j < scr->width; ++j) {
       int sample = i * scr->width + j;
       float theta = rand_float(0.0, 2.0 * PI);
-      float dof_mag = rand_float(0.0, dof_blur_amount);
+      //float dof_mag = rand_float(0.0, dof_blur_amount);
+      float dof_mag = sqrt(rand_float(0.0, 1.0)) * dof_blur_amount;
       Vec3f sample_start =
           position + dof_mag * (dx * cos(theta) + dy * sin(theta));
       constexpr float jitter_amount = 1.0;
@@ -569,7 +570,8 @@ Game::Game(PerfSoftScreen *scr)
                      {0.0, 0.0, 0.0},
                       0.0,
                       -1.0,
-                      {100, 0, 100}});
+                      {0, 0, 0}});
+                      //{100, 0, 100}});
     quads.push_back({{10.0, 17.0, -2.0},
                      {10.0, 17.0, 18.0},
                      {10.0, -3.0, 18.0},
