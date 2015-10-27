@@ -3,6 +3,7 @@
 #include <thread>
 #include <algorithm>
 #include <random>
+#include <unistd.h>
 #include "Game.h"
 #include "Threadpool.h"
 
@@ -171,21 +172,23 @@ void Game::handle_input() {
     }
   }
   if (change_model) {
-    for (int sample = 0; sample < scr->width * scr->height; ++sample) {
-      auto& acc = accumulators[sample];
-      if (acc.count != 0) {
-        acc.r = acc.r/acc.count;
-        acc.g = acc.g/acc.count;
-        acc.b = acc.b/acc.count;
-        acc.count = 0;
-      }
-    }
     ratio = focus_length / plane_distance;
     dz = Vec3f(pitch, yaw) * ratio;
     dx = Vec3f(0.0, yaw + PI / 2) * ratio;
     dy = Vec3f(pitch - PI / 2, yaw) * ratio;
     top_left = position + dz * plane_distance - dx * scr->width / 2.0 -
                dy * scr->height / 2.0;
+    for (int sample = 0; sample < scr->width * scr->height; ++sample) {
+      auto& acc = accumulators[sample];
+      acc.lock();
+      if (acc.count != 0) {
+        acc.r = acc.r/acc.count;
+        acc.g = acc.g/acc.count;
+        acc.b = acc.b/acc.count;
+        acc.count = 0;
+      }
+      acc.unlock();
+    }
   }
 }
 
@@ -510,6 +513,7 @@ void Game::render_slice(int slice) {
         }
 #endif
         auto& acc = accumulators[sample];
+        acc.lock();
         if (acc.count == 0) {
           acc.r = r;
           acc.g = g;
@@ -520,6 +524,7 @@ void Game::render_slice(int slice) {
           acc.b += b;
         }
         acc.count++;
+        acc.unlock();
       }
     }
     num_rays_cast += scr->width * ((slice + 1) * scr->height / nthreads - slice * scr->height / nthreads);
@@ -531,6 +536,7 @@ Game::Game(PerfSoftScreen *scr)
       plane_distance(scr->width / (tan(rad(80.0) / 2.0) * 2.0)), pitch(0.0),
       yaw(0.0), fov(rad(80.0)), ambient_light_quantity(0.1),
       dof_blur_amount(0.0), num_rays_cast(0), position(0.0, 0.0, 0.0),
+      accumulators(scr->width * scr->height),
       input_disabled(false) {
   scr->set_recording_style("images", 5);
   spheres.push_back(
@@ -599,9 +605,12 @@ Game::Game(PerfSoftScreen *scr)
   handle_input();
   pitch = 0.0;
   yaw = 0.0;
-  accumulators.resize(scr->width * scr->height);
   for (int sample = 0; sample < scr->width * scr->height; ++sample) {
-    accumulators[sample] = {0.0, 0.0, 0.0, 0};
+    accumulators[sample].r = 0.0;
+    accumulators[sample].g = 0.0;
+    accumulators[sample].b = 0.0;
+    accumulators[sample].count = 0;
+    accumulators[sample].flag.clear();
   }
   ratio = focus_length / plane_distance;
   dz = Vec3f(pitch, yaw) * ratio;
@@ -631,6 +640,7 @@ void Game::run() {
         Uint8 r;
         Uint8 g;
         Uint8 b;
+        acc.lock();
         if (acc.count != 0) {
           r = Uint8(rint(min<float>(acc.r / acc.count, 255.0)));
           g = Uint8(rint(min<float>(acc.g / acc.count, 255.0)));
@@ -640,6 +650,7 @@ void Game::run() {
           g = Uint8(rint(min<float>(acc.g, 255.0)));
           b = Uint8(rint(min<float>(acc.b, 255.0)));
         }
+        acc.unlock();
         scr->draw_pixel(j, i, {r, g, b});
       }
     }

@@ -17,6 +17,13 @@ struct ColorAccumulator {
   float g;
   float b;
   uint32_t count;
+  std::atomic_flag flag;
+  void lock() {
+    while (flag.test_and_set(std::memory_order_acquire));
+  }
+  void unlock() {
+    flag.clear();
+  }
 };
 
 class Game {
