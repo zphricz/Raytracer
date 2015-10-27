@@ -1,7 +1,7 @@
 ELFNAME = raytracer
 SUBMODULES = Linear Threadpool Screen
 OBJDIR = objs
-CXXFLAGS = -std=c++11 -Ofast -Wall -Werror
+CXXFLAGS = -std=c++14 -Ofast -Wall -Werror
 LDFLAGS = -lSDL2
 OS = $(shell uname -s)
 SRC = $(wildcard *.cpp)
@@ -14,7 +14,7 @@ ifeq ($(OS), Darwin)
 	CXX = clang++
 endif
 ifeq ($(OS), Linux)
-	CXX = g++
+	CXX = g++-5
 	LDFLAGS += -lpthread
 endif
 

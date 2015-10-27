@@ -50,7 +50,7 @@ int main(int argc, char *argv[]) {
   }
 
   Threadpool::set_num_threads(num_threads);
-  PerfSoftScreen scr(screen_width, screen_height, "Raytracer", full_screen, false);
+  PerfSoftScreen scr(screen_width, screen_height, "Raytracer", full_screen, true);
   Game g(&scr);
   g.run();
   return 0;

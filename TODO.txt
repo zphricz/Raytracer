@@ -1,3 +1,4 @@
+- Fix race conditions over changing values of color accumulators
 - Figure out why pixels tend to go black/white in the center of reflections
 - Figure out a correct lighting/reflection model
 - Add some form of texture mapping

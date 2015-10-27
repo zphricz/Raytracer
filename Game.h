@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <limits>
+#include <future>
 #include "Screen.h"
 #include "Vec.h"
 #include "SceneComponents.h"
@@ -33,6 +34,7 @@ private:
   float fov;
   float ambient_light_quantity;
   float dof_blur_amount;
+  std::atomic<uint64_t> num_rays_cast;
   Linear::Vec3f position;
   std::vector<ColorAccumulator> accumulators;
   std::vector<Sphere> spheres;
@@ -42,7 +44,6 @@ private:
   bool input_disabled;
 
   void render_slice(int slice);
-  void draw_slice(int slice);
   void handle_input();
   void calculate_quad_normals();
 

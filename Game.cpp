@@ -91,9 +91,9 @@ void Game::handle_input() {
       break;
     }
   }
-  Vec3f unit_dz = Vec3f(pitch, yaw);
-  Vec3f unit_dx = Vec3f(0.0, yaw + PI / 2);
-  Vec3f unit_dy = Vec3f(pitch - PI / 2, yaw);
+  Vec3f unit_dz(pitch, yaw);
+  Vec3f unit_dx(0.0, yaw + PI / 2);
+  Vec3f unit_dy(pitch - PI / 2, yaw);
   float speed_factor;
   if (!input_disabled) {
     if (key_state[SDL_SCANCODE_LSHIFT] || key_state[SDL_SCANCODE_LSHIFT]) {
@@ -171,11 +171,14 @@ void Game::handle_input() {
     }
   }
   if (change_model) {
-    for (auto &acc : accumulators) {
-      acc.r = 0.0;
-      acc.g = 0.0;
-      acc.b = 0.0;
-      acc.count = 0;
+    for (int sample = 0; sample < scr->width * scr->height; ++sample) {
+      auto& acc = accumulators[sample];
+      if (acc.count != 0) {
+        acc.r = acc.r/acc.count;
+        acc.g = acc.g/acc.count;
+        acc.b = acc.b/acc.count;
+        acc.count = 0;
+      }
     }
     ratio = focus_length / plane_distance;
     dz = Vec3f(pitch, yaw) * ratio;
@@ -387,7 +390,7 @@ void Game::ray_trace(Vec3f origin, Vec3f ray, float &r, float &g, float &b,
     return; // We should never get here
   }
   // sample_vec speeds up the process by putting a hard limit of only three
-  // calls to rand_float() per sample taken. This has the affect of making all
+  // calls to rand_float() per sample taken. This has the effect of making all
   // lights get sampled at the same point relative to their center and size
   static thread_local Vec3f sample_vec;
   if (depth == 0) {
@@ -475,60 +478,51 @@ void Game::ray_trace(Vec3f origin, Vec3f ray, float &r, float &g, float &b,
 
 void Game::render_slice(int slice) {
   int nthreads = Threadpool::get_num_threads();
-  for (int i = slice * scr->height / nthreads; i < (slice + 1) * scr->height / nthreads; ++i) {
-    for (int j = 0; j < scr->width; ++j) {
-      int sample = i * scr->width + j;
-      float theta = rand_float(0.0, 2.0 * PI);
-      //float dof_mag = rand_float(0.0, dof_blur_amount);
-      float dof_mag = sqrt(rand_float(0.0, 1.0)) * dof_blur_amount;
-      Vec3f sample_start =
-          position + dof_mag * (dx * cos(theta) + dy * sin(theta));
-      constexpr float jitter_amount = 1.0;
-      float jitter_x =
-          rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
-      float jitter_y =
-          rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
-      Vec3f sample_end = top_left + dx * (jitter_x + j) + dy * (jitter_y + i);
-      Vec3f ray = (sample_end - sample_start).normal();
-      float r = 0.0;
-      float g = 0.0;
-      float b = 0.0;
-      ray_trace(sample_start, ray, r, g, b);
+  while (running) {
+    for (int i = slice * scr->height / nthreads; i < (slice + 1) * scr->height / nthreads; ++i) {
+      for (int j = 0; j < scr->width; ++j) {
+        int sample = i * scr->width + j;
+        float theta = rand_float(0.0, 2.0 * PI);
+        //float dof_mag = rand_float(0.0, dof_blur_amount);
+        float dof_mag = sqrt(rand_float(0.0, 1.0)) * dof_blur_amount;
+        Vec3f sample_start =
+            position + dof_mag * (dx * cos(theta) + dy * sin(theta));
+        constexpr float jitter_amount = 1.0;
+        float jitter_x =
+            rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
+        float jitter_y =
+            rand_float(0.5 - jitter_amount / 2.0, 0.5 + jitter_amount / 2.0);
+        Vec3f sample_end = top_left + dx * (jitter_x + j) + dy * (jitter_y + i);
+        Vec3f ray = (sample_end - sample_start).normal();
+        float r = 0.0;
+        float g = 0.0;
+        float b = 0.0;
+        ray_trace(sample_start, ray, r, g, b);
 #if 1
-      /*r = min<float>(r, 255.0);
-      g = min<float>(g, 255.0);
-      b = min<float>(b, 255.0);*/
-      float m = max<float>(max<float>(r, g), b);
-      if (m > 255.0) {
-        r *= 255.0 / m;
-        g *= 255.0 / m;
-        b *= 255.0 / m;
-      }
+        /*r = min<float>(r, 255.0);
+        g = min<float>(g, 255.0);
+        b = min<float>(b, 255.0);*/
+        float m = max<float>(max<float>(r, g), b);
+        if (m > 255.0) {
+          r *= 255.0 / m;
+          g *= 255.0 / m;
+          b *= 255.0 / m;
+        }
 #endif
-      accumulators[sample].r += r;
-      accumulators[sample].g += g;
-      accumulators[sample].b += b;
-      accumulators[sample].count++;
+        auto& acc = accumulators[sample];
+        if (acc.count == 0) {
+          acc.r = r;
+          acc.g = g;
+          acc.b = b;
+        } else {
+          acc.r += r;
+          acc.g += g;
+          acc.b += b;
+        }
+        acc.count++;
+      }
     }
-  }
-}
-
-void Game::draw_slice(int slice) {
-  int nthreads = Threadpool::get_num_threads();
-  for (int i = slice * scr->height / nthreads; i < (slice + 1) * scr->height / nthreads; ++i) {
-    for (int j = 0; j < scr->width; ++j) {
-      int sample = i * scr->width + j;
-      Uint8 r = Uint8(rint(min<float>(accumulators[sample].r /
-                                 accumulators[sample].count,
-                                 255.0)));
-      Uint8 g = Uint8(rint(min<float>(accumulators[sample].g /
-                                 accumulators[sample].count,
-                                 255.0)));
-      Uint8 b = Uint8(rint(min<float>(accumulators[sample].b /
-                                      accumulators[sample].count,
-                                      255.0)));
-      scr->draw_pixel(j, i, {r, g, b});
-    }
+    num_rays_cast += scr->width * ((slice + 1) * scr->height / nthreads - slice * scr->height / nthreads);
   }
 }
 
@@ -536,7 +530,7 @@ Game::Game(PerfSoftScreen *scr)
     : scr(scr), running(true),
       plane_distance(scr->width / (tan(rad(80.0) / 2.0) * 2.0)), pitch(0.0),
       yaw(0.0), fov(rad(80.0)), ambient_light_quantity(0.1),
-      dof_blur_amount(0.0), position(0.0, 0.0, 0.0),
+      dof_blur_amount(0.0), num_rays_cast(0), position(0.0, 0.0, 0.0),
       input_disabled(false) {
   scr->set_recording_style("images", 5);
   spheres.push_back(
@@ -554,7 +548,7 @@ Game::Game(PerfSoftScreen *scr)
                    0.0,
                    -1.0,
                    {100, 100, 100}});
-#if 0
+#if 1
     quads.push_back({{-10.0, -3.0, -2.0},
                      {-10.0, -3.0, 18.0},
                      {-10.0, 17.0, 18.0},
@@ -606,11 +600,8 @@ Game::Game(PerfSoftScreen *scr)
   pitch = 0.0;
   yaw = 0.0;
   accumulators.resize(scr->width * scr->height);
-  for (auto &acc : accumulators) {
-    acc.r = 0.0;
-    acc.g = 0.0;
-    acc.b = 0.0;
-    acc.count = 0;
+  for (int sample = 0; sample < scr->width * scr->height; ++sample) {
+    accumulators[sample] = {0.0, 0.0, 0.0, 0};
   }
   ratio = focus_length / plane_distance;
   dz = Vec3f(pitch, yaw) * ratio;
@@ -628,25 +619,47 @@ void Game::run() {
   high_resolution_clock::time_point last_time = high_resolution_clock::now();
   high_resolution_clock::time_point current_time;
   int nthreads = Threadpool::get_num_threads();
+  for (int i = 0; i < nthreads; ++i) {
+    Threadpool::submit_task(&Game::render_slice, this, i);
+  }
+  uint64_t num_rays_cast_last = 0;
   while (running) {
-    for (int i = 0; i < nthreads; ++i) {
-      Threadpool::submit_task(&Game::render_slice, this, i);
+    for (int i = 0; i < scr->height; ++i) {
+      for (int j = 0; j < scr->width; ++j) {
+        int sample = i * scr->width + j;
+        auto& acc = accumulators[sample];
+        Uint8 r;
+        Uint8 g;
+        Uint8 b;
+        if (acc.count != 0) {
+          r = Uint8(rint(min<float>(acc.r / acc.count, 255.0)));
+          g = Uint8(rint(min<float>(acc.g / acc.count, 255.0)));
+          b = Uint8(rint(min<float>(acc.b / acc.count, 255.0)));
+        } else {
+          r = Uint8(rint(min<float>(acc.r, 255.0)));
+          g = Uint8(rint(min<float>(acc.g, 255.0)));
+          b = Uint8(rint(min<float>(acc.b, 255.0)));
+        }
+        scr->draw_pixel(j, i, {r, g, b});
+      }
     }
-    Threadpool::wait_for_all_jobs();
-    for (int i = 0; i < nthreads; ++i) {
-      Threadpool::submit_task(&Game::draw_slice, this, i);
-    }
-    Threadpool::wait_for_all_jobs();
     handle_input();
     if (!running) {
       break;
     }
     scr->commit();
     current_time = high_resolution_clock::now();
-    cout << "RAYS PER SECOND: "
-         << (scr->width * scr->height) /
-                duration_cast<duration<float>>(current_time - last_time)
-                    .count() << endl;
-    last_time = current_time;
+    uint64_t this_num_rays_cast = num_rays_cast;
+    static int i = 0;
+    if (++i == 20) {
+      cout << "RAYS PER SECOND: "
+           << (this_num_rays_cast - num_rays_cast_last) /
+                  duration_cast<duration<float>>(current_time - last_time)
+                      .count() << endl;
+      num_rays_cast_last = this_num_rays_cast;
+      last_time = current_time;
+      i = 0;
+    }
   }
+  Threadpool::wait_for_all_jobs();
 }
