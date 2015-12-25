@@ -191,19 +191,6 @@ void Game::handle_input() {
   }
 }
 
-void Game::calculate_quad_normals() {
-  for (Quad &quad : quads) {
-    quad.normal = quad.p1.cross(quad.p2);
-    quad.normal += quad.p2.cross(quad.p3);
-    quad.normal += quad.p3.cross(quad.p4);
-    quad.normal += quad.p4.cross(quad.p1);
-    quad.normal.normalize();
-    planes.push_back(
-        {quad.p1, quad.normal, quad.reflectivity, quad.spec_power, quad.c});
-  }
-  quads.clear();
-}
-
 float Game::detect_sphere_hit(Vec3f origin, Vec3f ray, int &sphere_index,
                               float max_distance, float cutoff) {
   sphere_index = -1;
@@ -231,7 +218,8 @@ float Game::detect_sphere_hit(Vec3f origin, Vec3f ray, int &sphere_index,
   return max_distance;
 }
 
-/* Taken from wikipedia */
+/*
+// Taken from wikipedia
 static bool triangle_hit(Vec3f V1, Vec3f V2, Vec3f V3, Vec3f O, Vec3f D,
                          float &dist) {
   Vec3f e1, e2; // Edge1, Edge2
@@ -271,31 +259,7 @@ static bool triangle_hit(Vec3f V1, Vec3f V2, Vec3f V3, Vec3f O, Vec3f D,
   // No hit, no win
   return false;
 }
-
-float Game::detect_quad_hit(Vec3f origin, Vec3f ray, int &quad_index,
-                            float max_distance, float cutoff) {
-  quad_index = -1;
-  int size = quads.size();
-  for (int i = 0; i < size; ++i) {
-    Quad &quad = quads[i];
-    float distance = numeric_limits<float>::max();
-    if (triangle_hit(quad.p1, quad.p2, quad.p3, origin, ray, distance)) {
-      if (distance < max_distance) {
-        max_distance = distance;
-        quad_index = i;
-      }
-      continue;
-    }
-    if (triangle_hit(quad.p1, quad.p3, quad.p4, origin, ray, distance)) {
-      if (distance < max_distance) {
-        max_distance = distance;
-        quad_index = i;
-      }
-      continue;
-    }
-  }
-  return max_distance;
-}
+*/
 
 float Game::detect_plane_hit(Vec3f origin, Vec3f ray, int &plane_index,
                              float max_distance, float cutoff) {
@@ -324,14 +288,6 @@ float Game::detect_hit(Vec3f origin, Vec3f ray, int &index,
   if (sphere_index != -1) {
     index = sphere_index;
     hit_type = GeometryType::SPHERE;
-  }
-#endif
-#if 0
-  int quad_index;
-  distance = detect_quad_hit(origin, ray, quad_index, distance);
-  if (quad_index != -1) {
-    index = quad_index;
-    hit_type = GeometryType::QUAD;
   }
 #endif
 #if 1
@@ -375,12 +331,6 @@ void Game::ray_trace(Vec3f origin, Vec3f ray, float &r, float &g, float &b,
     spec_power = spheres[index].spec_power;
     reflectivity = spheres[index].reflectivity;
     c = spheres[index].c;
-    break;
-  case GeometryType::QUAD:
-    normal = quads[index].normal;
-    spec_power = quads[index].spec_power;
-    reflectivity = quads[index].reflectivity;
-    c = quads[index].c;
     break;
   case GeometryType::PLANE:
     normal = planes[index].normal;
@@ -541,6 +491,7 @@ Game::Game(PerfSoftScreen *scr, int num_threads)
       accumulators(scr->width * scr->height), input_disabled(false),
       num_threads(num_threads) {
   scr->set_recording_style("images", 5);
+  /*
   spheres.push_back(
       {{-4.0 / 3.0, 0.0, 8.0 / 3.0}, 2.0 / 3.0, 0.25, 100.0, {150, 0, 0}});
   spheres.push_back(
@@ -548,6 +499,75 @@ Game::Game(PerfSoftScreen *scr, int num_threads)
   spheres.push_back(
       {{4.0 / 3.0, 0.0, 8.0 / 3.0}, 2.0 / 3.0, 0.25, 100.0, {0, 0, 150}});
   spheres.push_back({{0.0, 1.0, 7.0}, 2.5, 0.9, 15.0, {80, 80, 80}});
+  */
+  //planes.push_back({{0.0, -3.0, 0.0}, {0.0, 1.0, 0.0}, 0.0, -1.0, {100, 100, 100}});
+
+  ifstream f("scene.txt");
+  if (!f.is_open()) {
+    cout << "Error opening: " << "scene.txt" << endl;
+    exit(1);
+  }
+  enum class ParseState {NONE, SPHERES, PLANES, LIGHTS} parse_state = ParseState::NONE;
+  while (!f.eof()) {
+    while (f.peek() == '\n') {
+      f.ignore();
+    }
+    if (f.peek() == '#') {
+      while (f.peek() != '\n') {
+        f.ignore();
+      }
+      continue;
+    }
+    if (f.peek() == 'S' || f.peek() == 'Q' || f.peek() == 'L' || f.peek() == 'P') {
+      char l[500];
+      f.getline(l, 500);
+      std::string line(l);
+      if (line == "Spheres:") {
+        parse_state = ParseState::SPHERES;
+      } else if (line == "Lights:") {
+        parse_state = ParseState::LIGHTS;
+      } else if (line == "Planes:") {
+        parse_state = ParseState::PLANES;
+      }
+    } else {
+      Sphere s;
+      Plane p;
+      Light l;
+      int r;
+      int g;
+      int b;
+      switch (parse_state) {
+      case ParseState::NONE:
+        break;
+      case ParseState::SPHERES:
+        f >> s.position.x >> s.position.y >> s.position.z >> s.radius >> s.reflectivity >> s.spec_power >> r >> g >> b;
+        s.c.r = r;
+        s.c.g = g;
+        s.c.b = b;
+        spheres.push_back(s);
+        break;
+      case ParseState::PLANES:
+        f >> p.p.x >> p.p.y >> p.p.z >> p.normal.x >> p.normal.y >> p.normal.z >> p.reflectivity >> p.spec_power >> r >> g >> b;
+        p.c.r = r;
+        p.c.g = g;
+        p.c.b = b;
+        planes.push_back(p);
+        break;
+      case ParseState::LIGHTS:
+        cout << "LIGHT" << endl;
+        f >> l.position.x >> l.position.y >> l.position.z >> l.intensity >> l.radius;
+        cout << l.intensity << endl;
+        lights.push_back(l);
+        break;
+      }
+      while (!f.eof() && f.peek() != '\n') {
+        f.ignore();
+      }
+    }
+  }
+
+  // Quads are out. TODO: convert these to planes
+/*
   quads.push_back({{-10.0, -3.0, -2.0},
                    {-10.0, -3.0, 18.0},
                    {10.0, -3.0, 18.0},
@@ -556,7 +576,6 @@ Game::Game(PerfSoftScreen *scr, int num_threads)
                    0.0,
                    -1.0,
                    {100, 100, 100}});
-#if 0
   quads.push_back({{-10.0, -3.0, -2.0},
                    {-10.0, -3.0, 18.0},
                    {-10.0, 17.0, 18.0},
@@ -598,11 +617,8 @@ Game::Game(PerfSoftScreen *scr, int num_threads)
                    0.0,
                    -1.0,
                    {0, 0, 100}});
-#endif
-  lights.push_back({{-20.0, 16.0, 8.0}, 300.0, 1.0});
-  lights.push_back({{0.0, 16.0, 8.0}, 150.0, 1.0});
+*/
 
-  calculate_quad_normals();
   SDL_SetRelativeMouseMode(SDL_TRUE);
   handle_input();
   pitch = 0.0;
@@ -630,7 +646,7 @@ void Game::run() {
   std::vector<std::thread> threads;
   threads.reserve(num_threads);
   for (int i = 0; i < num_threads; ++i) {
-    threads.emplace_back(std::thread(&Game::render_slice, this, i));
+    threads.emplace_back(&Game::render_slice, this, i);
   }
   uint64_t num_rays_cast_last = 0;
   while (running) {

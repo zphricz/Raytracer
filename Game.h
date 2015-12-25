@@ -10,7 +10,7 @@
 
 constexpr float ERR_MARGIN = 0.0005;
 
-enum class GeometryType { NONE, SPHERE, QUAD, PLANE };
+enum class GeometryType { NONE, SPHERE, PLANE };
 
 struct ColorAccumulator {
   float r;
@@ -44,7 +44,6 @@ private:
   Linear::Vec3f position;
   std::vector<ColorAccumulator> accumulators;
   std::vector<Sphere> spheres;
-  std::vector<Quad> quads;
   std::vector<Plane> planes;
   std::vector<Light> lights;
   bool input_disabled;
@@ -52,17 +51,12 @@ private:
 
   void render_slice(int slice);
   void handle_input();
-  void calculate_quad_normals();
 
   float
   detect_triangle_hit(Linear::Vec3f origin, Linear::Vec3f ray,
                       int &triangle_index,
                       float max_distance = std::numeric_limits<float>::max(),
                       float cutoff = ERR_MARGIN);
-  float detect_quad_hit(Linear::Vec3f origin, Linear::Vec3f ray,
-                        int &quad_index,
-                        float max_distance = std::numeric_limits<float>::max(),
-                        float cutoff = ERR_MARGIN);
 
   float detect_plane_hit(Linear::Vec3f origin, Linear::Vec3f ray,
                          int &plane_index,

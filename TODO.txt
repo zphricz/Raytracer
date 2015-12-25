@@ -1,4 +1,4 @@
-- Fix race conditions over changing values of color accumulators
+- Fix race conditions over changing values of color accumulators (still not 100% gone, dunno if I care enough to fix it or not)
 - Figure out why pixels tend to go black/white in the center of reflections
 - Figure out a correct lighting/reflection model
 - Add some form of texture mapping
@@ -9,5 +9,4 @@
 - Separate material and object definitions
 - Add support for colored lights
 - Add some degree of interactivity to the program (moving spheres/lights)
-- Make the scene be read in from a file as opposed to being hardcoded
 - Add OpenCL acceleration?
