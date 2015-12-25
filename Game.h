@@ -48,6 +48,7 @@ private:
   std::vector<Plane> planes;
   std::vector<Light> lights;
   bool input_disabled;
+  int num_threads;
 
   void render_slice(int slice);
   void handle_input();
@@ -79,7 +80,7 @@ private:
                  float &b, float weight = 1.0, int depth = 0);
 
 public:
-  Game(PerfSoftScreen *scr);
+  Game(PerfSoftScreen *scr, int num_threads);
   ~Game();
   void run();
 };

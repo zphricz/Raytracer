@@ -1,5 +1,5 @@
 ELFNAME = raytracer
-SUBMODULES = Linear Threadpool Screen
+SUBMODULES = Linear Screen
 OBJDIR = objs
 CXXFLAGS = -std=c++14 -Ofast -Wall -Werror
 LDFLAGS = -lSDL2

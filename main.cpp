@@ -3,7 +3,6 @@
 #include <thread>
 #include "Screen.h"
 #include "Game.h"
-#include "Threadpool.h"
 
 using namespace std;
 
@@ -49,10 +48,9 @@ int main(int argc, char *argv[]) {
     full_screen = false;
   }
 
-  Threadpool::set_num_threads(num_threads);
   PerfSoftScreen scr(screen_width, screen_height, "Raytracer", full_screen,
                      true);
-  Game g(&scr);
+  Game g(&scr, num_threads);
   g.run();
   return 0;
 }

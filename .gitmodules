@@ -4,6 +4,3 @@
 [submodule "Linear"]
 	path = Linear
 	url = https://github.com/zphricz/Linear
-[submodule "Threadpool"]
-	path = Threadpool
-	url = https://github.com/zphricz/Threadpool

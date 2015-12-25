@@ -5,7 +5,6 @@
 #include <random>
 #include <unistd.h>
 #include "Game.h"
-#include "Threadpool.h"
 
 constexpr float PI = M_PI;
 constexpr float TWO_PI = M_PI * 2.0;
@@ -482,10 +481,9 @@ void Game::ray_trace(Vec3f origin, Vec3f ray, float &r, float &g, float &b,
 }
 
 void Game::render_slice(int slice) {
-  int nthreads = Threadpool::get_num_threads();
   while (running) {
-    for (int i = slice * scr->height / nthreads;
-         i < (slice + 1) * scr->height / nthreads; ++i) {
+    for (int i = slice * scr->height / num_threads;
+         i < (slice + 1) * scr->height / num_threads; ++i) {
       for (int j = 0; j < scr->width; ++j) {
         int sample = i * scr->width + j;
         float theta = rand_float(0.0, 2.0 * PI);
@@ -530,17 +528,18 @@ void Game::render_slice(int slice) {
         acc.unlock();
       }
     }
-    num_rays_cast += scr->width * ((slice + 1) * scr->height / nthreads -
-                                   slice * scr->height / nthreads);
+    num_rays_cast += scr->width * ((slice + 1) * scr->height / num_threads -
+                                   slice * scr->height / num_threads);
   }
 }
 
-Game::Game(PerfSoftScreen *scr)
+Game::Game(PerfSoftScreen *scr, int num_threads)
     : scr(scr), running(true),
       plane_distance(scr->width / (tan(rad(80.0) / 2.0) * 2.0)), pitch(0.0),
       yaw(0.0), fov(rad(80.0)), ambient_light_quantity(0.1),
       dof_blur_amount(0.0), num_rays_cast(0), position(0.0, 0.0, 0.0),
-      accumulators(scr->width * scr->height), input_disabled(false) {
+      accumulators(scr->width * scr->height), input_disabled(false),
+      num_threads(num_threads) {
   scr->set_recording_style("images", 5);
   spheres.push_back(
       {{-4.0 / 3.0, 0.0, 8.0 / 3.0}, 2.0 / 3.0, 0.25, 100.0, {150, 0, 0}});
@@ -557,7 +556,7 @@ Game::Game(PerfSoftScreen *scr)
                    0.0,
                    -1.0,
                    {100, 100, 100}});
-#if 1
+#if 0
   quads.push_back({{-10.0, -3.0, -2.0},
                    {-10.0, -3.0, 18.0},
                    {-10.0, 17.0, 18.0},
@@ -628,9 +627,10 @@ Game::~Game() { scr->write_bmp("exit.bmp"); }
 void Game::run() {
   high_resolution_clock::time_point last_time = high_resolution_clock::now();
   high_resolution_clock::time_point current_time;
-  int nthreads = Threadpool::get_num_threads();
-  for (int i = 0; i < nthreads; ++i) {
-    Threadpool::submit_task(&Game::render_slice, this, i);
+  std::vector<std::thread> threads;
+  threads.reserve(num_threads);
+  for (int i = 0; i < num_threads; ++i) {
+    threads.emplace_back(std::thread(&Game::render_slice, this, i));
   }
   uint64_t num_rays_cast_last = 0;
   while (running) {
@@ -674,5 +674,7 @@ void Game::run() {
       i = 0;
     }
   }
-  Threadpool::wait_for_all_jobs();
+  for (auto & thread: threads) {
+    thread.join();
+  }
 }
