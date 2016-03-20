@@ -24,4 +24,3 @@ Lights:
 Planes:
 # {{x, y, z}, {normal_x, normal_y, normal_z}, reflectivity, spec_power, {r, g, b}}
 0.0 -3.0 0.0 0.0 1.0 0.0 0.0 -1.0 100 100 100
-
